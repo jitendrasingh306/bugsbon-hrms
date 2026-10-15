@@ -12,6 +12,28 @@ import { buildPermissions } from '../middleware/rbac.js';
 
 export const idParams = z.object({ id: objectIdSchema });
 
+const mobileNumberSchema = z
+  .string()
+  .trim()
+  .regex(/^\+?[0-9]{10,15}$/, 'Enter a valid mobile number')
+  .optional()
+  .or(z.literal(''));
+
+function normalizeMobileNumber(value) {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().replace(/[\s()-]/g, '');
+  return normalized || undefined;
+}
+
+async function ensureMobileAvailable(mobileNumber, currentUserId = null) {
+  if (!mobileNumber) return;
+  const query = { mobileNumber };
+  if (currentUserId) query._id = { $ne: currentUserId };
+  if (await User.exists(query)) {
+    throw new AppError(409, 'A user with this mobile number already exists.', 'DUPLICATE');
+  }
+}
+
 export const listUsers = asyncHandler(async (req, res) => {
   const users = await User.find().populate('roles', 'key name isSuperAdmin').populate('reportsTo', 'name').sort({ name: 1 }).limit(500);
   res.json({
@@ -19,6 +41,7 @@ export const listUsers = asyncHandler(async (req, res) => {
       id: String(u._id),
       name: u.name,
       email: u.email,
+      mobileNumber: u.mobileNumber || '',
       isActive: u.isActive,
       roles: u.roles.map((r) => ({ key: r.key, name: r.name })),
       roleIds: u.roles.map((r) => String(r._id)),
@@ -83,11 +106,13 @@ export const listPermissions = asyncHandler(async (req, res) => {
 export const createUserBody = z.object({
   name: z.string().trim().min(2).max(100),
   email: emailSchema,
+  mobileNumber: mobileNumberSchema,
   roleIds: z.array(objectIdSchema).min(1, 'Choose at least one role').max(10),
   reportsToId: z.preprocess((v) => (v === '' ? null : v), objectIdSchema.nullable().optional()),
 });
 export const updateUserBody = z.object({
   name: z.string().trim().min(2).max(100).optional(),
+  mobileNumber: mobileNumberSchema,
   roleIds: z.array(objectIdSchema).min(1).max(10).optional(),
   isActive: z.boolean().optional(),
   reportsToId: z.preprocess((v) => (v === '' ? null : v), objectIdSchema.nullable().optional()),
@@ -117,13 +142,16 @@ async function resolveRoles(req, roleIds) {
 
 export const createUser = asyncHandler(async (req, res) => {
   const { name, email, roleIds, reportsToId } = req.valid.body;
+  const mobileNumber = normalizeMobileNumber(req.valid.body.mobileNumber);
   const roles = await resolveRoles(req, roleIds);
   const reportsTo = await resolveReportsTo(reportsToId);
   if (await User.exists({ email })) throw new AppError(409, 'A user with this email already exists.', 'DUPLICATE');
+  await ensureMobileAvailable(mobileNumber);
   const password = tempPassword();
   const user = await User.create({
     name,
     email,
+    ...(mobileNumber ? { mobileNumber } : {}),
     roles: roles.map((r) => r._id),
     reportsTo,
     passwordHash: await hashPassword(password),
@@ -132,11 +160,12 @@ export const createUser = asyncHandler(async (req, res) => {
   });
   await audit(req, { action: 'user.created', entityType: 'User', entityId: user._id, summary: `User ${email} created with role(s) ${roles.map((r) => r.name).join(', ')}`, metadata: { roles: roles.map((r) => r.key) } });
   // The temporary password is shown once and never stored in readable form.
-  res.status(201).json({ user: { id: String(user._id), name, email }, temporaryPassword: password });
+  res.status(201).json({ user: { id: String(user._id), name, email, mobileNumber: user.mobileNumber || '' }, temporaryPassword: password });
 });
 
 export const updateUser = asyncHandler(async (req, res) => {
   const { name, roleIds, isActive, reportsToId } = req.valid.body;
+  const mobileNumber = normalizeMobileNumber(req.valid.body.mobileNumber);
   const target = await User.findById(req.valid.params.id).populate('roles');
   if (!target) throw new AppError(404, 'User not found.', 'NOT_FOUND');
   const targetIsFounder = target.roles.some((r) => r.isSuperAdmin);
@@ -146,6 +175,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (isSelf && isActive === false) throw new AppError(400, 'You cannot deactivate your own account.', 'VALIDATION_ERROR');
 
   const changes = {};
+  const unsetChanges = {};
   let newRoles = null;
   if (roleIds) {
     newRoles = await resolveRoles(req, roleIds);
@@ -154,6 +184,11 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (name) changes.name = name;
   if (isActive !== undefined) changes.isActive = isActive;
   if (reportsToId !== undefined) changes.reportsTo = await resolveReportsTo(reportsToId, target._id);
+  if (req.valid.body.mobileNumber !== undefined) {
+    await ensureMobileAvailable(mobileNumber, target._id);
+    if (mobileNumber) changes.mobileNumber = mobileNumber;
+    else unsetChanges.mobileNumber = '';
+  }
 
   const losesFounder = (newRoles && targetIsFounder && !newRoles.some((r) => r.isSuperAdmin)) || (isActive === false && targetIsFounder);
   if (losesFounder) {
@@ -162,7 +197,9 @@ export const updateUser = asyncHandler(async (req, res) => {
     if (others === 0) throw new AppError(400, 'At least one active Founder must remain.', 'VALIDATION_ERROR');
   }
 
-  const update = { $set: changes };
+  const update = {};
+  if (Object.keys(changes).length) update.$set = changes;
+  if (Object.keys(unsetChanges).length) update.$unset = unsetChanges;
   if (roleIds || isActive === false) update.$inc = { sessionVersion: 1 }; // forces re-login with the new access
   await User.updateOne({ _id: target._id }, update);
   await audit(req, { action: 'user.updated', entityType: 'User', entityId: target._id, summary: `User ${target.email} updated`, metadata: { name, isActive, roles: newRoles?.map((r) => r.key), reportsTo: reportsToId } });

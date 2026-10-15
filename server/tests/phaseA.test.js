@@ -74,6 +74,18 @@ describe('authentication', () => {
     expect(me.status).toBe(200);
   });
 
+  it('signs in with a saved mobile number using the identifier field', async () => {
+    await makeUser('mobilelogin@test.local', ['employee'], { mobileNumber: '9876543210' });
+    const agent = request.agent(app);
+    const csrf = await agent.get('/api/auth/csrf');
+    const res = await agent
+      .post('/api/auth/login')
+      .set('X-CSRF-Token', csrf.body.csrfToken)
+      .send({ identifier: '9876543210', password: PASSWORD });
+    expect(res.status).toBe(200);
+    expect(res.body.user.email).toBe('mobilelogin@test.local');
+  });
+
   it('gives the same generic error for a wrong password and an unknown email', async () => {
     const wrong = await signIn('founder@test.local', 'totally-wrong-pass1');
     const unknown = await signIn('nobody@test.local', 'totally-wrong-pass1');

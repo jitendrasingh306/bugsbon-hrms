@@ -6,6 +6,7 @@ function UserForm({ roles, managers, user, onClose, onSaved }) {
   const editing = !!user;
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [mobileNumber, setMobileNumber] = useState(user?.mobileNumber || '');
   const [roleIds, setRoleIds] = useState(user?.roleIds || []);
   const [reportsToId, setReportsToId] = useState(user?.reportsTo?.id || '');
   const [error, setError] = useState('');
@@ -18,8 +19,8 @@ function UserForm({ roles, managers, user, onClose, onSaved }) {
     setError(''); setBusy(true);
     try {
       const d = editing
-        ? await api(`/users/${user.id}`, { method: 'PATCH', body: { name, roleIds, reportsToId: reportsToId || null } })
-        : await api('/users', { method: 'POST', body: { name, email, roleIds, ...(reportsToId ? { reportsToId } : {}) } });
+        ? await api(`/users/${user.id}`, { method: 'PATCH', body: { name, mobileNumber: mobileNumber.trim(), roleIds, reportsToId: reportsToId || null } })
+        : await api('/users', { method: 'POST', body: { name, email, mobileNumber: mobileNumber.trim(), roleIds, ...(reportsToId ? { reportsToId } : {}) } });
       onSaved(d);
     } catch (err) {
       setError(err.message + (err.details ? ' ' + err.details.map((x) => x.message).join('; ') : ''));
@@ -32,6 +33,19 @@ function UserForm({ roles, managers, user, onClose, onSaved }) {
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       <label>Full name<input required minLength={2} maxLength={100} value={name} onChange={(e) => setName(e.target.value)} /></label>
       {!editing && <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>}
+      <label>Mobile Number
+        <input
+          type="tel"
+          autoComplete="tel"
+          inputMode="tel"
+          placeholder="e.g. 9876543210 or +919876543210"
+          pattern="\\+?[0-9]{10,15}"
+          title="Enter 10–15 digits, optionally starting with +"
+          value={mobileNumber}
+          onChange={(e) => setMobileNumber(e.target.value)}
+        />
+        <span className="muted small">Optional. The user can use this number to sign in.</span>
+      </label>
       <label>Reports to (manager — can assign this person's daily tasks and verify their end-of-day report)
         <select value={reportsToId} onChange={(e) => setReportsToId(e.target.value)}>
           <option value="">— nobody —</option>
@@ -96,6 +110,7 @@ export default function Users() {
       {created && (
         <div className="alert alert-ok">
           <strong>User created: {created.user.name} ({created.user.email})</strong>
+          {created.user.mobileNumber && <div>Mobile: {created.user.mobileNumber}</div>}
           <div>Temporary password (shown once — they must change it at first sign-in):</div>
           <div className="code">{created.temporaryPassword}</div>
           <button className="btn btn-ghost" onClick={() => setCreated(null)}>Dismiss</button>
@@ -121,12 +136,13 @@ export default function Users() {
       <div className="card table-wrap">
         {loading ? <p className="muted pad">Loading…</p> : items.length === 0 ? <p className="muted pad">No users yet.</p> : (
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Roles</th><th>Reports to</th><th>Status</th><th>Last sign-in</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Mobile Number</th><th>Roles</th><th>Reports to</th><th>Status</th><th>Last sign-in</th><th /></tr></thead>
             <tbody>
               {items.map((u) => (
                 <tr key={u.id}>
                   <td>{u.name}</td>
                   <td>{u.email}</td>
+                  <td>{u.mobileNumber || <span className="muted">—</span>}</td>
                   <td>{u.roles.map((r) => <span key={r.key} className="badge">{r.name}</span>)}</td>
                   <td>{u.reportsTo?.name || <span className="muted">—</span>}</td>
                   <td>{!u.isActive ? <span className="badge badge-grey">Deactivated</span> : u.lockedUntil ? <span className="badge badge-red">Locked</span> : <span className="badge badge-green">Active</span>}</td>

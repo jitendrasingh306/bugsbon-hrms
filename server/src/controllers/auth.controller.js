@@ -10,7 +10,17 @@ import { ensureCsrfToken } from '../middleware/csrf.js';
 import { serializeUser } from '../middleware/rbac.js';
 import { emailSchema, passwordSchema } from '../validators/common.js';
 
-export const loginBody = z.object({ email: emailSchema, password: z.string().min(1).max(128) });
+export const loginBody = z
+  .object({
+    // "identifier" is the current client field; "email" keeps older clients compatible.
+    identifier: z.string().trim().max(254).optional(),
+    email: z.string().trim().max(254).optional(),
+    password: z.string().min(1).max(128),
+  })
+  .refine((data) => Boolean(data.identifier || data.email), {
+    message: 'Email or mobile number is required.',
+    path: ['identifier'],
+  });
 export const changePasswordBody = z.object({
   currentPassword: z.string().min(1).max(128),
   newPassword: passwordSchema,
@@ -24,13 +34,28 @@ export const resetConfirmBody = z.object({
 export const getCsrf = (req, res) => res.json({ csrfToken: ensureCsrfToken(req) });
 
 export const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.valid.body;
-  const invalid = () => new AppError(401, 'Invalid email or password.', 'INVALID_CREDENTIALS');
+  const { identifier: submittedIdentifier, email: legacyEmail, password } = req.valid.body;
+  const identifier = (submittedIdentifier || legacyEmail || '').trim();
+  const isEmail = emailSchema.safeParse(identifier).success;
+  const normalizedIdentifier = isEmail
+    ? identifier.toLowerCase()
+    : identifier.replace(/[\s()-]/g, '');
+  const accountQuery = isEmail
+    ? { email: normalizedIdentifier }
+    : { mobileNumber: normalizedIdentifier };
 
-  const user = await User.findOne({ email }).select('+passwordHash').populate('roles');
+  const invalid = () => new AppError(401, 'Invalid email or mobile number or password.', 'INVALID_CREDENTIALS');
+  const user = await User.findOne(accountQuery).select('+passwordHash').populate('roles');
+
   if (!user) {
     await verifyPassword(password, DUMMY_HASH); // keep timing similar to a real check
-    await audit(req, { actor: null, action: 'auth.login_failed', entityType: 'User', summary: 'Failed sign-in (unknown account)', metadata: { email } });
+    await audit(req, {
+      actor: null,
+      action: 'auth.login_failed',
+      entityType: 'User',
+      summary: 'Failed sign-in (unknown account)',
+      metadata: { loginMethod: isEmail ? 'email' : 'mobile' },
+    });
     throw invalid();
   }
 

@@ -22,8 +22,8 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = useCallback(async (email, password) => {
-    const d = await api('/auth/login', { method: 'POST', body: { email, password } });
+  const login = useCallback(async (identifier, password) => {
+    const d = await api('/auth/login', { method: 'POST', body: { identifier, password } });
     setCsrfToken(d.csrfToken);
     setUser(d.user);
     return d.user;

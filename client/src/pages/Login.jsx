@@ -5,7 +5,7 @@ import { useAuth } from '../AuthContext.jsx';
 export default function Login() {
   const { user, login } = useAuth();
   const location = useLocation();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -17,7 +17,7 @@ export default function Login() {
     setError('');
     setBusy(true);
     try {
-      await login(email, password);
+      await login(identifier.trim(), password);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -31,8 +31,8 @@ export default function Login() {
         <div className="brand"><span className="brand-mark">B</span> Bugsbon HRMS</div>
         <h1>Sign in</h1>
         {error && <div className="alert alert-error" role="alert">{error}</div>}
-        <label>Email
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+        <label>Email or Mobile Number
+          <input type="text" autoComplete="username" placeholder="Enter email or mobile number" value={identifier} onChange={(e) => setIdentifier(e.target.value)} required autoFocus />
         </label>
         <label>Password
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />

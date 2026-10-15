@@ -5,6 +5,13 @@ const { Schema } = mongoose;
 const userSchema = new Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    mobileNumber: {
+      type: String,
+      trim: true,
+      unique: true,
+      sparse: true,
+      default: undefined,
+    },
     name: { type: String, required: true, trim: true },
     passwordHash: { type: String, required: true, select: false },
     roles: [{ type: Schema.Types.ObjectId, ref: 'Role' }],
