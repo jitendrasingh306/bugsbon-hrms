@@ -12,6 +12,7 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
   HOST: z.string().default('127.0.0.1'),
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
   MONGODB_URI: z.string().default('mongodb://127.0.0.1:27017/bugsbon_hrms'),
   MONGODB_URI_TEST: z.string().optional(),
   USE_TRANSACTIONS: z.enum(['auto', 'true', 'false']).default('auto'),

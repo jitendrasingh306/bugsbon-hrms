@@ -19,6 +19,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 /** Must be called after connectDb() — the session store reuses Mongoose's connection. */
 export function createApp() {
   const app = express();
+  app.set('trust proxy', env.TRUST_PROXY);
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(express.json({ limit: '1mb' }));
